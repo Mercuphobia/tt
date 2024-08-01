@@ -1,9 +1,9 @@
-d3.json("/testweb/web/js/datatest.json", function(error, data) {
+d3.json("/libweb/data/datatest.json", function(error, data) {
     if (error) throw error;
-    //console.log(data);
+
     // Phân tích dữ liệu
     const nodes = [];
-    var links = [];
+    const links = [];
 
     // Thêm thiết bị chính vào nodes
     nodes.push({ id: data.mac, label: data.label, node_link: data.node_link, ip : data.ip, wlan2g: data.wlan2g, wlan5g : data.wlan5g });
@@ -32,7 +32,7 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
             type: client.node_link === 'ETHER' ? 'solid' : 'dashed'
         });
     });
-    //console.log(data);
+
     // Khởi tạo mô phỏng D3.js
     const svg = d3.select("svg"),
         width = +svg.attr("width"),
@@ -43,13 +43,13 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
         .force("charge", d3.forceManyBody().strength(-1000))
         .force("center", d3.forceCenter(width / 2, height / 2));
 
-    // Them cac lien ket vao svg chon line them 
+    // Thêm các liên kết (cạnh)
     let link = svg.append("g")
         .attr("class", "links")
         .selectAll("line")
-        .data(links) // gan du lieu tu mang lines vao line
-        .enter().append("line") // tao doi tuong line cho phan tu tuong ung trong mang links
-        .attr("class", d => `link ${d.type}`) // gan thuoc tinh css cho loai duong tuong ung
+        .data(links)
+        .enter().append("line")
+        .attr("class", d => `link ${d.type}`)
         .attr("stroke-width", 2)
         .attr("stroke", d => d.type === 'solid' ? "darkblue" : "blue");
 
@@ -59,7 +59,7 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
         .selectAll("g")
         .data(nodes)
         .enter().append("g")
-        .call(d3.drag() // gan hanh vi keo tha
+        .call(d3.drag()
             .on("start", dragstarted)
             .on("drag", dragged)
             .on("end", dragended));
@@ -90,7 +90,7 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
     const infoGroup = svg.append('g')
         .attr('class', 'info-group')
         .style('display', 'none'); // Ẩn khi không cần thiết
-    // the mot hinh chu nhat vao  nhom infoGroup co dai, rong, mau, mau vien
+
     infoGroup.append('rect')
         .attr('width', 200)
         .attr('height', 100)
@@ -105,44 +105,42 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
         .attr('class', 'info-text');
 
     // Hiển thị thông tin khi di chuột vào nút
-    // event chua thong tin ve vi tri con tro, doi tuong, thuoc tinh
-    // d dai dien cho du lieu lien quan den doi tuong ma su kien xay ra
     node.on('mouseover', function(event, d) {
         infoGroup.style('display', null); // Hiện thẻ thông tin
         updateInfoGroupPosition(event, d);
-        if(event.id === data.mac){
+        if(d.id === data.mac){
             // thiết bị chính
             infoGroup.select('.info-text')
-            .text(`Device Name: ${event.label}`)
+            .text(`Device Name: ${d.label}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em') // Di chuyển xuống dưới
-            .text(`IP: ${event.ip}`)
+            .text(`Connect: ${d.ip}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em') // Di chuyển xuống dưới
-            .text(`Ethernet MAC: ${event.id}`)
+            .text(`Ethernet MAC: ${d.id}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em') // Di chuyển xuống dưới
-            .text(`5Ghz MAC: ${event.wlan5g}`)
+            .text(`5Ghz MAC: ${d.wlan5g}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em') // Di chuyển xuống dưới
-            .text(`2Ghz MAC: ${event.wlan2g}`);
+            .text(`2Ghz MAC: ${d.wlan2g}`);
         }
         else{
             // các thiết bị khác
             infoGroup.select('.info-text')
-            .text(`Type connect: ${event.node_link}`)
+            .text(`Type connect: ${d.node_link}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em')
-            .text(`Device Name: ${event.label}`)
+            .text(`Device Name: ${d.label}`)
             .append('tspan')
             .attr('x', 10)
             .attr('dy', '1.2em')
-            .text(`MAC: ${event.id}`);
+            .text(`MAC: ${d.id}`);
         }
         
     })
@@ -176,38 +174,38 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
 
     simulation.force("link")
         .links(links);
-    // toa do xy nguon va xy dich
+
     function ticked() {
         link
             .attr("x1", d => d.source.x)
             .attr("y1", d => d.source.y)
             .attr("x2", d => d.target.x)
             .attr("y2", d => d.target.y);
-        // di chuyen den toa do moi neu k dc dinh nghia thi =0
+
         node
             .attr("transform", d => `translate(${d.x || 0},${d.y || 0})`);
     }
-    // bat dau keo giu vi tri co dinh cua nut
+
     function dragstarted(d) {
         if (!d3.event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
     }
-    // cap nhat vi tri cua nut
+
     function dragged(d) {
         d.fx = d3.event.x;
         d.fy = d3.event.y;
         // Cập nhật tooltip khi kéo
         infoGroup.attr('transform', `translate(${d.x + 20}, ${d.y - 50})`);
     }
-    // ket thuc keo va bo vi tri co dinh cua nut
+
     function dragended(d) {
         if (!d3.event.active) simulation.alphaTarget(0);
         d.fx = null;
         d.fy = null;
     }
 
-    // tao nut ngau nhien
+    // Thêm chức năng tạo và xóa nút ngẫu nhiên
     function addRandomNode() {
         const mac = `random-${Math.random().toString(36).substr(2, 12)}`;
         const node_link = Math.random() > 0.5 ? 'ETHER' : 'WiFi';
@@ -223,27 +221,15 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
         restartSimulation();
     }
 
-
-
     function removeRandomNode() {
         if (nodes.length <= 1) return; // Đảm bảo luôn có ít nhất một nút
-    
-        // Xóa nút cuối cùng trong danh sách
-        const nodeToRemove = nodes.pop();
-    
-        // Lọc lại các liên kết để loại bỏ các liên kết liên quan đến nút bị xóa
+
+        const nodeToRemove = nodes[nodes.length - 1];
+        nodes.pop();
         links = links.filter(link => link.source.id !== nodeToRemove.id && link.target.id !== nodeToRemove.id);
-    
-        // Xóa liên kết cuối cùng nếu danh sách links không rỗng
-        if (links.length > 0) {
-            links.pop();
-        }
-        //console.log(links);
-        //console.log(nodes);
+
         restartSimulation();
     }
-    
-
 
     function restartSimulation() {
         // Cập nhật dữ liệu cho các nút và liên kết
@@ -254,17 +240,15 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
             .attr("stroke-width", 2)
             .attr("stroke", d => d.type === 'solid' ? "darkblue" : "blue")
             .merge(link);
-    
+
         node = node.data(nodes, d => d.id);
         node.exit().remove();
-        
-        // Thêm các nút mới
         const nodeEnter = node.enter().append("g")
             .call(d3.drag()
                 .on("start", dragstarted)
                 .on("drag", dragged)
                 .on("end", dragended));
-    
+
         nodeEnter.append("circle")
             .attr("r", d => {
                 if(d.node_link === 'ETHER') return 20;
@@ -277,73 +261,23 @@ d3.json("/testweb/web/js/datatest.json", function(error, data) {
                 if (d.node_link === 'ETHER') return "orange";
                 return "green";
             });
-    
+
         nodeEnter.append("text")
             .attr("dy", 3)
             .attr("dx", 15)
             .text(d => d.label)
             .attr("font-size", "12px")
             .attr("fill", "#000");
-    
+
         node = nodeEnter.merge(node);
-    
+
         // Khởi động lại mô phỏng
         simulation.nodes(nodes).on("tick", ticked);
         simulation.force("link").links(links);
         simulation.alpha(1).restart();
-    
-        // Thiết lập sự kiện cho các nút mới
-        node.on('mouseover', function(event, d) {
-            infoGroup.style('display', null); // Hiện thẻ thông tin
-            updateInfoGroupPosition(event, d);
-            if(d.id === data.mac){
-                // thiết bị chính
-                infoGroup.select('.info-text')
-                .text(`Device Name: ${event.label}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em') // Di chuyển xuống dưới
-                .text(`Connect: ${event.ip}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em') // Di chuyển xuống dưới
-                .text(`Ethernet MAC: ${event.id}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em') // Di chuyển xuống dưới
-                .text(`5Ghz MAC: ${event.wlan5g}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em') // Di chuyển xuống dưới
-                .text(`2Ghz MAC: ${event.wlan2g}`);
-            }
-            else{
-                // các thiết bị khác
-                infoGroup.select('.info-text')
-                .text(`Type connect: ${event.node_link}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em')
-                .text(`Device Name: ${event.label}`)
-                .append('tspan')
-                .attr('x', 10)
-                .attr('dy', '1.2em')
-                .text(`MAC: ${event.id}`);
-            }
-            
-        })
-        .on('mousemove', function(event) {
-            updateInfoGroupPosition(event);
-        })
-        .on('mouseout', function() {
-            infoGroup.style('display', 'none'); // Ẩn thẻ thông tin
-        });
-        console.log("node",nodes);
-        console.log("link:",links);
     }
 
-
-    // Thêm nút ngẫu nhiên mỗi 20 giây
-    setInterval(addRandomNode,20000);
-    setInterval(removeRandomNode, 30000);
+    // Thêm nút ngẫu nhiên mỗi 10 giây
+    setInterval(addRandomNode, 10000);
+    setInterval(removeRandomNode, 15000);
 });
