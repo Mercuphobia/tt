@@ -66,7 +66,8 @@ endif
 
 # only set main compile options if none were chosen
 CFLAGS += -Wall -Wextra -Wshadow -Wformat-security -Winit-self -Wmissing-prototypes -D$(TARGET_OS) -Iinclude $(COPT) -DUSE_STACK_SIZE=$(USE_STACK_SIZE)
-
+#CFLAGS = -I/path/to/civetweb/include
+LDFLAGS = -L/path/to/libraries
 ifdef WITH_CFLAGS
   CFLAGS += $(WITH_CFLAGS)
 endif
@@ -77,12 +78,12 @@ ifdef WITH_DEBUG
   CFLAGS += -g -DDEBUG
 else ifdef TEST_ASAN
   CFLAGS += -g -fsanitize=address
-  CC = clang
-  CXX = clang++
+  CC = /home/test/buildroot-2015.05/output/host/usr/bin/mips-buildroot-linux-uclibc-gcc
+  CXX = /home/test/buildroot-2015.05/output/host/usr/bin/mips-buildroot-linux-uclibc-gcc++
 else ifdef TEST_FUZZ
   CFLAGS += -g -fsanitize=address,fuzzer,undefined -O0 -g -ggdb3 -fno-omit-frame-pointer -fsanitize-address-use-after-scope -fno-sanitize-recover=undefined
-  CC = clang
-  CXX = clang++
+  CC = /home/test/buildroot-2015.05/output/host/usr/bin/mips-buildroot-linux-uclibc-gcc
+  CXX = /home/test/buildroot-2015.05/output/host/usr/bin/mips-buildroot-linux-uclibc-gcc++
   BUILD_DIRS += $(BUILD_DIR)/fuzztest
   APP_SOURCES = fuzztest/fuzzmain.c
   OBJECTS = $(LIB_SOURCES:.c=.o) $(APP_SOURCES:.c=.o)

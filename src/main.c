@@ -221,6 +221,16 @@ static struct tuser_data
 #define CONFIG_FILE2 "/usr/local/etc/civetweb.conf"
 #endif
 
+//code them
+int cleanup_chain(const char *chain_name);
+int read_data_from_file(struct mg_connection *conn, void *cbdata);
+int handle_post(struct mg_connection *conn, void *cbdata);
+int run_app(struct mg_connection *conn, void *cbdata);
+int stop_app(struct mg_connection *conn, void *cbdata);
+int clear_data(struct mg_connection *conn, void *cbdata);
+int get_state_file(struct mg_connection *conn, void *cbdata);
+int set_state_file(struct mg_connection *conn, void *cbdata);
+
 enum {
 	OPTION_TITLE,
 	OPTION_ICON,
@@ -3233,6 +3243,297 @@ main(int argc, char *argv[])
 #else
 
 
+// code them chay app
+
+int cleanup_chain(const char *chain_name) {
+    char command[256];
+    snprintf(command, sizeof(command), "iptables -L %s >/dev/null 2>&1", chain_name);
+    if (system(command) != 0) {
+        return 0;
+    }
+    snprintf(command, sizeof(command), "iptables -F %s", chain_name);
+    if (system(command) != 0) {
+        return -1;
+    }
+    snprintf(command, sizeof(command), "iptables -D INPUT -j %s", chain_name);
+    if (system(command) != 0) {
+    }
+    snprintf(command, sizeof(command), "iptables -D OUTPUT -j %s", chain_name);
+    if (system(command) != 0) {
+    }
+	snprintf(command, sizeof(command), "iptables -D FORWARD -j %s", chain_name);
+    if (system(command) != 0) {
+    }
+    snprintf(command, sizeof(command), "iptables -X %s", chain_name);
+    if (system(command) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+
+int run_app(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+    if (cleanup_chain("RESOLVE_CHAIN") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up RESOLVE_CHAIN\n");
+        return 500;
+    }
+    if (cleanup_chain("BLOCK_IP_CHAIN") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
+        return 500;
+    }
+    //int result = system("/home/test/Documents/IPBlock_app/block_app/bin/app");
+	//int result = system("/tmp/userdata/IPBlock_app/block_app/bin/app");
+	int result = system("/tmp/IPBlock_app/block_app/bin/app");
+    if (result == -1) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to start the app\n");
+        return 500;
+    } else {
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nApp started successfully\n");
+    }
+    return 200;
+}
+
+int stop_app(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+    if (cleanup_chain("RESOLVE_CHAIN") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up RESOLVE_CHAIN\n");
+        return 500;
+    }
+    if (cleanup_chain("BLOCK_IP_CHAIN") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
+        return 500;
+    }
+    int result = system("killall -9 app");
+    if (result == -1) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to stop the app\n");
+        return 500;
+    } else {
+        mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nApp stopped successfully\n");
+        return 200;
+    }
+}
+
+int read_data_from_file(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+    FILE *file = fopen("url_data.txt", "r");
+    if (file == NULL) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError reading file");
+        return 500; // Trả về mã lỗi
+    }
+
+    // Cấp phát bộ nhớ cho buffer động
+    size_t buffer_size = 2048; // Kích thước ban đầu cho buffer
+    char *buffer = malloc(buffer_size);
+    if (buffer == NULL) {
+        fclose(file);
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nMemory allocation failed");
+        return 500; // Trả về mã lỗi
+    }
+    
+    buffer[0] = '\0'; // Khởi tạo buffer rỗng
+    char line[256];
+    int firstLine = 1;
+
+    // Bắt đầu tạo JSON
+    strcat(buffer, "[\n"); // Mở mảng JSON
+
+    while (fgets(line, sizeof(line), file) != NULL) {
+        // Chia dòng thành các thành phần: domain, start_day, start_time, end_day, end_time
+        char *url = strtok(line, ", ");  // Lấy phần domain
+        char *start_day = strtok(NULL, " "); // Lấy phần start_day
+        char *start_time = strtok(NULL, ", "); // Lấy phần start_time
+        char *end_day = strtok(NULL, " ");   // Lấy phần end_day
+        char *end_time = strtok(NULL, " ");   // Lấy phần end_time
+
+        // Xóa ký tự newline và khoảng trắng ở đầu
+        if (url) {
+            url[strcspn(url, "\n")] = '\0'; // Xóa ký tự newline
+            while (*url == ' ') url++;  // Bỏ khoảng trắng ở đầu
+        }
+        if (start_day) {
+            start_day[strcspn(start_day, "\n")] = '\0'; // Xóa ký tự newline
+            while (*start_day == ' ') start_day++;  // Bỏ khoảng trắng ở đầu
+        }
+        if (start_time) {
+            start_time[strcspn(start_time, "\n")] = '\0'; // Xóa ký tự newline
+            while (*start_time == ' ') start_time++;  // Bỏ khoảng trắng ở đầu
+        }
+        if (end_day) {
+            end_day[strcspn(end_day, "\n")] = '\0'; // Xóa ký tự newline
+            while (*end_day == ' ') end_day++;  // Bỏ khoảng trắng ở đầu
+        }
+        if (end_time) {
+            end_time[strcspn(end_time, "\n")] = '\0'; // Xóa ký tự newline
+            while (*end_time == ' ') end_time++;  // Bỏ khoảng trắng ở đầu
+        }
+
+        // Nếu là dòng đầu tiên, không thêm dấu phẩy
+        if (!firstLine) {
+            strcat(buffer, ",\n"); // Thêm dấu phẩy trước các mục tiếp theo
+        }
+        firstLine = 0;
+
+        char json_line[512];
+        snprintf(json_line, sizeof(json_line), 
+                 "  {\"url\": \"%s\", \"start_day\": \"%s\", \"start_time\": \"%s\", \"end_day\": \"%s\", \"end_time\": \"%s\"}", 
+                 url ? url : "", start_day ? start_day : "", start_time ? start_time : "", end_day ? end_day : "", end_time ? end_time : "");
+        
+
+        size_t current_length = strlen(buffer);
+        size_t json_length = strlen(json_line);
+        if (current_length + json_length + 1 > buffer_size) {
+            buffer_size *= 2;
+            char *new_buffer = realloc(buffer, buffer_size);
+            if (new_buffer == NULL) {
+                free(buffer);
+                fclose(file);
+                mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nMemory allocation failed");
+                return 500;
+            }
+            buffer = new_buffer;
+        }
+
+        strcat(buffer, json_line);
+    }
+
+    // Kết thúc JSON
+    strcat(buffer, "\n]\n"); // Đóng mảng JSON
+
+    fclose(file);
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", buffer);
+    free(buffer); // Giải phóng bộ nhớ
+    return 200; // Trả về mã thành công
+}
+
+
+int handle_post(struct mg_connection *conn, void *cbdata) {
+	(void)cbdata;
+    char post_data[1024];
+    int post_data_len = mg_read(conn, post_data, sizeof(post_data) - 1);
+
+    if (post_data_len > 0) {
+        post_data[post_data_len] = '\0';
+
+        FILE *file = fopen("url_data.txt", "a");
+        if (file) {
+            fprintf(file, "%s\n", post_data);
+            fclose(file);
+            mg_printf(conn,
+                      "HTTP/1.1 200 OK\r\n"
+                      "Content-Type: application/json\r\n\r\n"
+                      "{\"status\":\"success\"}");
+        } else {
+            mg_printf(conn,
+                      "HTTP/1.1 500 Internal Server Error\r\n"
+                      "Content-Type: application/json\r\n\r\n"
+                      "{\"status\":\"error\", \"message\":\"Failed to open file\"}");
+        }
+    } else {
+        mg_printf(conn,
+                  "HTTP/1.1 400 Bad Request\r\n"
+                  "Content-Type: application/json\r\n\r\n"
+                  "{\"status\":\"error\", \"message\":\"No data received\"}");
+    }
+
+    return 200;
+}
+
+
+int clear_data(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+
+    FILE *file = fopen("url_data.txt", "w");
+    if (file == NULL) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError clearing file\n");
+        return 500;
+    }
+
+    fclose(file);
+
+    mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nData cleared successfully\n");
+    return 200; 
+}
+
+int get_state_file(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+
+    FILE *file = fopen("state.txt", "r");
+    if (file == NULL) {
+        mg_printf(conn,
+                  "HTTP/1.1 500 Internal Server Error\r\n"
+                  "Content-Type: text/plain\r\n\r\n"
+                  "Error reading state.txt\n");
+        return 500;
+    }
+
+    char buffer[2048];
+    size_t read_size = fread(buffer, 1, sizeof(buffer) - 1, file);
+    fclose(file);
+
+    if (read_size == 0 && ferror(file)) {
+        mg_printf(conn,
+                  "HTTP/1.1 500 Internal Server Error\r\n"
+                  "Content-Type: text/plain\r\n\r\n"
+                  "Error reading state.txt\n");
+        return 500;
+    }
+
+    buffer[read_size] = '\0';
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: application/json\r\n\r\n"
+              "{\"state\": \"%s\"}",
+              buffer);
+
+    return 200;
+}
+
+
+int set_state_file(struct mg_connection *conn, void *cbdata) {
+    (void)cbdata;
+
+    char post_data[1024];
+    int post_data_len = mg_read(conn, post_data, sizeof(post_data) - 1);
+
+    if (post_data_len <= 0) {
+        mg_printf(conn,
+                  "HTTP/1.1 400 Bad Request\r\n"
+                  "Content-Type: application/json\r\n\r\n"
+                  "{\"status\":\"error\", \"message\":\"No data received\"}");
+        return 400;
+    }
+
+    post_data[post_data_len] = '\0';
+
+    FILE *file = fopen("state.txt", "w");
+    if (file == NULL) {
+        mg_printf(conn,
+                  "HTTP/1.1 500 Internal Server Error\r\n"
+                  "Content-Type: application/json\r\n\r\n"
+                  "{\"status\":\"error\", \"message\":\"Failed to open state.txt\"}");
+        return 500;
+    }
+
+    if (fprintf(file, "%s", post_data) < 0) {
+        fclose(file);
+        mg_printf(conn,
+                  "HTTP/1.1 500 Internal Server Error\r\n"
+                  "Content-Type: application/json\r\n\r\n"
+                  "{\"status\":\"error\", \"message\":\"Failed to write data to state.txt\"}");
+        return 500;
+    }
+
+    fclose(file);
+
+    mg_printf(conn,
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: application/json\r\n\r\n"
+              "{\"status\":\"success\", \"message\":\"Data written to state.txt\"}");
+    return 200;
+}
+
 /* main for Linux (and others) */
 int
 main(int argc, char *argv[])
@@ -3240,12 +3541,22 @@ main(int argc, char *argv[])
 	init_server_name();
 	init_system_info();
 	start_civetweb(argc, argv);
+	// code them
+	mg_set_request_handler(g_ctx, "/get-state", get_state_file, NULL);
+	mg_set_request_handler(g_ctx, "/set-state", set_state_file, NULL);
+	mg_set_request_handler(g_ctx, "/run-app", run_app, NULL);
+	mg_set_request_handler(g_ctx, "/stop-app", stop_app, NULL);
+	mg_set_request_handler(g_ctx, "/clear-data", clear_data, NULL);
+    mg_set_request_handler(g_ctx, "/save-data", handle_post, NULL);
+    mg_set_request_handler(g_ctx, "/load-data", read_data_from_file, NULL);
+
+
 	fprintf(stdout,
 	        "%s started on port(s) %s with web root [%s]\n",
 	        g_server_name,
 	        mg_get_option(g_ctx, "listening_ports"),
 	        mg_get_option(g_ctx, "document_root"));
-
+	
 	while (g_exit_flag == 0) {
 		sleep(1);
 	}
