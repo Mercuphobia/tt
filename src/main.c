@@ -222,7 +222,9 @@ static struct tuser_data
 #endif
 
 //code them
+int get_config_value(const char *key, char *value, size_t value_size);
 int cleanup_chain(const char *chain_name);
+int cleanup_chain_have_mac(const char *chain_name);
 int read_data_from_file(struct mg_connection *conn, void *cbdata);
 int handle_post(struct mg_connection *conn, void *cbdata);
 int run_app(struct mg_connection *conn, void *cbdata);
@@ -3255,13 +3257,13 @@ int cleanup_chain(const char *chain_name) {
     if (system(command) != 0) {
         return -1;
     }
-    snprintf(command, sizeof(command), "iptables -D INPUT -j %s", chain_name);
+    snprintf(command, sizeof(command), "iptables -D INPUT -j %s >/dev/null 2>&1", chain_name);
     if (system(command) != 0) {
     }
-    snprintf(command, sizeof(command), "iptables -D OUTPUT -j %s", chain_name);
+    snprintf(command, sizeof(command), "iptables -D OUTPUT -j %s >/dev/null 2>&1", chain_name);
     if (system(command) != 0) {
     }
-	snprintf(command, sizeof(command), "iptables -D FORWARD -j %s", chain_name);
+	snprintf(command, sizeof(command), "iptables -D FORWARD -j %s >/dev/null 2>&1", chain_name);
     if (system(command) != 0) {
     }
     snprintf(command, sizeof(command), "iptables -X %s", chain_name);
@@ -3271,6 +3273,93 @@ int cleanup_chain(const char *chain_name) {
     return 0;
 }
 
+int cleanup_chain_have_mac(const char *chain_name) {
+    char command[256];
+    snprintf(command, sizeof(command), "iptables -L %s >/dev/null 2>&1", chain_name);
+    if (system(command) != 0) {
+        return 0;
+    }
+    snprintf(command, sizeof(command), "iptables -F %s", chain_name);
+    if (system(command) != 0) {
+        return -1;
+    }
+    snprintf(command, sizeof(command), "iptables -D INPUT -j %s >/dev/null 2>&1", chain_name);
+    if (system(command) != 0) {
+    }
+	snprintf(command, sizeof(command), "iptables -D FORWARD -j %s >/dev/null 2>&1", chain_name);
+    if (system(command) != 0) {
+    }
+    snprintf(command, sizeof(command), "iptables -X %s", chain_name);
+    if (system(command) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+
+#define CONFIG_FILE_TO_START_APP "/home/test/etc/config/app_config.txt"
+//#define CONFIG_FILE_TO_START_APP "/etc/config/app_config.txt"
+
+// minh
+//#define CONFIG_FILE_TO_START_APP "/home/minh/etc/config/app_config.txt"
+
+
+// #define DEFAULT_LOG_LEVEL 3
+
+int get_config_value(const char *key, char *value, size_t value_size) {
+    FILE *file = fopen(CONFIG_FILE_TO_START_APP, "r");
+    if (!file) {
+        perror("Failed to open config file");
+        return -1;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        char *trimmed_line = line;
+        while (*trimmed_line == ' ' || *trimmed_line == '\t') {
+            trimmed_line++;
+        }
+
+        char *delimiter = strchr(trimmed_line, '=');
+        if (delimiter) {
+            *delimiter = '\0';
+            char *found_key = trimmed_line;
+            char *found_value = delimiter + 1;
+
+            while (*found_value == ' ' || *found_value == '\t') {
+                found_value++;
+            }
+            found_key[strcspn(found_key, " \t")] = '\0';
+
+            if (strcmp(found_key, key) == 0) {
+                strncpy(value, found_value, value_size - 1);
+                value[value_size - 1] = '\0';
+                value[strcspn(value, "\n")] = '\0';
+                fclose(file);
+
+                if (strcmp(key, "log_level") == 0) {
+                    int log_level = atoi(value);
+                    if (log_level < 1 || log_level > 3) {
+						fprintf(stderr, "Invalid value for 'log_level': %s. "
+                                        "Please enter a value between 1 and 3.\n", value);
+                        snprintf(value, value_size, "%d", 3);
+                    }
+                }
+                return 0;
+            }
+        }
+    }
+
+    fclose(file);
+
+    if (strcmp(key, "log_level") == 0) {
+        snprintf(value, value_size, "%d", 3);
+        return 0;
+    }
+
+    fprintf(stderr, "Key '%s' not found in config file\n", key);
+    return -1;
+}
 
 int run_app(struct mg_connection *conn, void *cbdata) {
     (void)cbdata;
@@ -3282,15 +3371,37 @@ int run_app(struct mg_connection *conn, void *cbdata) {
         mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
         return 500;
     }
-    //int result = system("/home/test/Documents/IPBlock_app/block_app/bin/app");
-	//int result = system("/tmp/userdata/IPBlock_app/block_app/bin/app");
-	int result = system("/tmp/IPBlock_app/block_app/bin/app");
+    if (cleanup_chain_have_mac("BLOCK_IP_CHAIN_HAVE_MAC") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
+        return 500;
+    }
+
+    // char log_level[8];
+    // if (get_config_value("log_level", log_level, sizeof(log_level)) != 0) {
+    //     mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to read log_level from config file\n");
+    //     return 500;
+    // }
+
+	char log_level[8] = "3"; // Giá trị mặc định
+	if (get_config_value("log_level", log_level, sizeof(log_level)) != 0) {
+		mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nConfig file missing, using default log_level = 3\n");
+	}
+
+    char command[512];
+    snprintf(command, sizeof(command), "/home/test/Documents/backup/IPBlock_app/block_app/bin/app -d %s", log_level);
+	//snprintf(command, sizeof(command), "/tmp/userdata/IPBlock_app/block_app/bin/app -d %s", log_level);
+
+	// minh
+	//snprintf(command, sizeof(command), "/home/minh/IPBlock_app_v2/block_app/bin/app -d %s", log_level);
+
+    int result = system(command);
     if (result == -1) {
         mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to start the app\n");
         return 500;
     } else {
         mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nApp started successfully\n");
     }
+
     return 200;
 }
 
@@ -3301,6 +3412,10 @@ int stop_app(struct mg_connection *conn, void *cbdata) {
         return 500;
     }
     if (cleanup_chain("BLOCK_IP_CHAIN") != 0) {
+        mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
+        return 500;
+    }
+	if (cleanup_chain_have_mac("BLOCK_IP_CHAIN_HAVE_MAC") != 0) {
         mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nFailed to clean up BLOCK_IP_CHAIN\n");
         return 500;
     }
@@ -3319,65 +3434,66 @@ int read_data_from_file(struct mg_connection *conn, void *cbdata) {
     FILE *file = fopen("url_data.txt", "r");
     if (file == NULL) {
         mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nError reading file");
-        return 500; // Trả về mã lỗi
+        return 500;
     }
 
-    // Cấp phát bộ nhớ cho buffer động
-    size_t buffer_size = 2048; // Kích thước ban đầu cho buffer
+
+    size_t buffer_size = 2048; 
     char *buffer = malloc(buffer_size);
     if (buffer == NULL) {
         fclose(file);
         mg_printf(conn, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nMemory allocation failed");
-        return 500; // Trả về mã lỗi
+        return 500; 
     }
     
-    buffer[0] = '\0'; // Khởi tạo buffer rỗng
+    buffer[0] = '\0';
     char line[256];
     int firstLine = 1;
 
-    // Bắt đầu tạo JSON
-    strcat(buffer, "[\n"); // Mở mảng JSON
+    strcat(buffer, "[\n");
 
     while (fgets(line, sizeof(line), file) != NULL) {
-        // Chia dòng thành các thành phần: domain, start_day, start_time, end_day, end_time
-        char *url = strtok(line, ", ");  // Lấy phần domain
-        char *start_day = strtok(NULL, " "); // Lấy phần start_day
-        char *start_time = strtok(NULL, ", "); // Lấy phần start_time
-        char *end_day = strtok(NULL, " ");   // Lấy phần end_day
-        char *end_time = strtok(NULL, " ");   // Lấy phần end_time
+        char *url = strtok(line, ", ");
+		char *mac = strtok(NULL, ", ");
+        char *start_day = strtok(NULL, " ");
+        char *start_time = strtok(NULL, ", ");
+        char *end_day = strtok(NULL, " ");
+        char *end_time = strtok(NULL, " ");
 
-        // Xóa ký tự newline và khoảng trắng ở đầu
         if (url) {
-            url[strcspn(url, "\n")] = '\0'; // Xóa ký tự newline
-            while (*url == ' ') url++;  // Bỏ khoảng trắng ở đầu
+            url[strcspn(url, "\n")] = '\0';
+            while (*url == ' ') url++;
+        }
+		if (mac) {
+            mac[strcspn(mac, "\n")] = '\0';
+            while (*mac == ' ') mac++;
         }
         if (start_day) {
-            start_day[strcspn(start_day, "\n")] = '\0'; // Xóa ký tự newline
-            while (*start_day == ' ') start_day++;  // Bỏ khoảng trắng ở đầu
+            start_day[strcspn(start_day, "\n")] = '\0';
+            while (*start_day == ' ') start_day++;
         }
         if (start_time) {
-            start_time[strcspn(start_time, "\n")] = '\0'; // Xóa ký tự newline
-            while (*start_time == ' ') start_time++;  // Bỏ khoảng trắng ở đầu
+            start_time[strcspn(start_time, "\n")] = '\0';
+            while (*start_time == ' ') start_time++;
         }
         if (end_day) {
-            end_day[strcspn(end_day, "\n")] = '\0'; // Xóa ký tự newline
-            while (*end_day == ' ') end_day++;  // Bỏ khoảng trắng ở đầu
+            end_day[strcspn(end_day, "\n")] = '\0';
+            while (*end_day == ' ') end_day++;
         }
         if (end_time) {
-            end_time[strcspn(end_time, "\n")] = '\0'; // Xóa ký tự newline
-            while (*end_time == ' ') end_time++;  // Bỏ khoảng trắng ở đầu
+            end_time[strcspn(end_time, "\n")] = '\0';
+            while (*end_time == ' ') end_time++;
         }
 
-        // Nếu là dòng đầu tiên, không thêm dấu phẩy
         if (!firstLine) {
-            strcat(buffer, ",\n"); // Thêm dấu phẩy trước các mục tiếp theo
+            strcat(buffer, ",\n");
         }
         firstLine = 0;
 
         char json_line[512];
         snprintf(json_line, sizeof(json_line), 
-                 "  {\"url\": \"%s\", \"start_day\": \"%s\", \"start_time\": \"%s\", \"end_day\": \"%s\", \"end_time\": \"%s\"}", 
-                 url ? url : "", start_day ? start_day : "", start_time ? start_time : "", end_day ? end_day : "", end_time ? end_time : "");
+                 "  {\"url\": \"%s\", \"mac\": \"%s\", \"start_day\": \"%s\", \"start_time\": \"%s\", \"end_day\": \"%s\", \"end_time\": \"%s\"}", 
+                 url ? url : "", mac ? mac : "", start_day ? start_day : "", start_time ? start_time : "", end_day ? end_day : "", end_time ? end_time : "");
         
 
         size_t current_length = strlen(buffer);
@@ -3397,16 +3513,15 @@ int read_data_from_file(struct mg_connection *conn, void *cbdata) {
         strcat(buffer, json_line);
     }
 
-    // Kết thúc JSON
+
     strcat(buffer, "\n]\n"); // Đóng mảng JSON
 
     fclose(file);
 
     mg_printf(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n%s", buffer);
-    free(buffer); // Giải phóng bộ nhớ
-    return 200; // Trả về mã thành công
+    free(buffer);
+    return 200;
 }
-
 
 int handle_post(struct mg_connection *conn, void *cbdata) {
 	(void)cbdata;
